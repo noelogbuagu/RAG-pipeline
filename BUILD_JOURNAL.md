@@ -789,13 +789,16 @@ limits and the need for a live smoke test with their own credentials.
 
 ## 25. Prepare the public repository and real PDF example
 
-**Date:** 30 October 2026 · **Status:** Tested; ready for publication
+**Date:** 30 October 2026 · **Status:** Published and verified public
 
 The owner requested public GitHub access and a conventional repository that
 teammates can clone without choosing a special branch. Prepared the completed
 app for a fast-forward of `main`, keeping the earlier development history and
 the `team-starter` checkpoint. Updated the agent branch guidance accordingly.
-Repository visibility will be changed to public after pushing these changes.
+Pushed the cleanup to `main` and `team-starter`, then changed repository visibility
+to public. GitHub reported `PUBLIC` with `main` as the default branch. Code
+licensing remains unchanged pending the owner's optional license choice; the
+sample paper retains its own license.
 
 Reorganized README around prerequisites, locked dependency installation, the
 environment file, three-terminal startup, and a first upload/question. Added a
