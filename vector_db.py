@@ -59,13 +59,15 @@ class QdrantStorage:
     def search(
         self, collection_name: str, vector: list[float], limit: int = 5
     ) -> list[models.ScoredPoint]:
-        result = self.client.query_points(
+        """Return ranked hits with each chunk's text and source in its payload."""
+        results = self.client.query_points(
             collection_name=collection_name,
             query=vector,
             limit=limit,
             with_payload=True,
         )
-        return result.points
+        # Keep the ranked points intact so text, provenance, and scores stay paired.
+        return results.points
 
     def close(self) -> None:
         self.client.close()

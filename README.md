@@ -7,6 +7,10 @@ answer generation will be added next.
 For the step-by-step development history and decisions, see the
 [build journal](BUILD_JOURNAL.md).
 
+The development branches form a stack: `inngest-dev-server` →
+`vector-database-setup` → `loading-and-chunking`. The last branch is the starting
+point for the next stage; it inherits the completed setup from the first two.
+
 ## Getting started
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.14 or later.
@@ -101,6 +105,28 @@ Call these methods directly, without `await`. Create the collection before
 inserting points, using the chosen embedding model's vector size. Use unsigned
 integer IDs or UUID strings for points. The class stores and queries supplied
 vectors; it does not generate embeddings or parse documents.
+
+Keep each chunk's text and provenance in the same point payload, for example:
+
+```python
+# embedding is the vector already generated for this specific chunk.
+point = PointStruct(
+    id=chunk_id,  # A unique integer or UUID, not a position reused for each file.
+    vector=embedding,
+    payload={"text": chunk_text, "source": document_id, "chunk_index": chunk_index},
+)
+storage.upsert("documents", [point])
+```
+
+`search()` returns ranked `ScoredPoint` objects. Each hit contains `id`, `score`,
+and its original `payload`, including `text`, `source`, and any page/chunk metadata.
+Keep these together when constructing the answer context. A deduplicated source
+list can be derived for display later; it cannot replace per-chunk citations.
+
+Dimensions are configured by `ensure_collection`, not inferred by `upsert`.
+The collection size, stored embeddings, and query embeddings must agree, and
+document/query embeddings must use the same model and settings. No model or
+production vector size has been selected yet. The tests use synthetic 3D vectors.
 
 The health endpoint and Inngest placeholder are synchronous too. FastAPI's
 lifespan retains its required async context-manager interface, while opening and

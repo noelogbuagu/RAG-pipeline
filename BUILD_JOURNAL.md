@@ -343,3 +343,62 @@ thread affinity on the target machine; a single Uvicorn worker can still run
 multiple handler threads. A Qdrant server is the intended next step for shared
 or concurrent database use. Keep these choices separate from Docker installation
 and from the broader production-readiness work documented in milestone 8.
+
+## 13. Preserve context and source together during retrieval
+
+**Date:** 30 October 2026 · **Status:** Search correction implemented and tested
+
+Reviewed the owner's search edits, which attempted to build separate context
+and unique-source lists. That representation loses the relationship between a
+specific chunk and its source, particularly when several chunks share a file.
+The edited loop also iterated the query response rather than its `.points`.
+
+Kept the storage method's `list[models.ScoredPoint]` contract and corrected it to
+return `results.points`. Each ranked hit retains its ID, score, and complete
+payload, so text, source, page, and chunk metadata remain together. Source
+deduplication belongs in a later display step; it should not discard the mapping
+needed for citations. Missing source metadata remains missing rather than being
+assigned another chunk's source.
+
+The upsert method already accepts complete `PointStruct` objects. Each point
+must pair an embedding with the text it represents and that text's provenance.
+Use chunk IDs unique within the collection; restarting integer IDs at zero for
+every document would overwrite earlier points. Parallel lists are unnecessary
+at this storage boundary; build one point per chunk before upserting.
+
+Clarified that local mode needs no URL; the optional URL selects a future server.
+Dimensions remain explicit in `ensure_collection`. We have not selected an
+embedding model or set 3072 as a default. OpenAI documents default output sizes
+of 3072 for `text-embedding-3-large` and 1536 for `text-embedding-3-small`, with
+configurable shortening for these models. A future model choice must set the
+collection size accordingly and use the same model/settings for document and
+query embeddings. See the [official embedding guide](https://developers.openai.com/api/docs/guides/embeddings).
+
+Added a regression test using multiple PDF/Word chunks, repeated source names,
+page/chunk metadata, and a point with no source. All seven tests passed; ranking
+and each point's original payload are preserved. The previously documented
+upstream SQLite probe warning still appeared. Real embedding generation and
+answer-context formatting have not been implemented.
+
+## 14. Separate the development stages into stacked branches
+
+**Date:** 30 October 2026
+
+Organized the work into descriptive branch names without the `codex/` prefix:
+
+| Branch | Base and scope |
+| --- | --- |
+| `inngest-dev-server` | Ends at `04fad96`, containing the FastAPI/Inngest setup on top of the initial project on `main`. |
+| `vector-database-setup` | Continues from Inngest with the journal, storage decisions, synchronous Qdrant class, tests, and context/source retrieval correction. |
+| `loading-and-chunking` | Starts at the completed vector setup and is the working branch for the next stage. |
+
+Preserved existing commits and included the pending retrieval improvements in
+the vector stage. The former `codex/inngest-dev-server` branch mixed both stages;
+its history is retained through `vector-database-setup`. The replacement branches
+are published before removing the old remote branch. No open pull requests
+needed retargeting. `main` remains at the initial project setup.
+
+These are stacked branches: vector setup includes the Inngest commits, and
+loading/chunking includes both earlier stages. Loading and chunking has not yet
+been implemented. Earlier journal entries retain the old branch names where
+they describe historical actions.

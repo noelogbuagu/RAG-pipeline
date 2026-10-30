@@ -1,5 +1,11 @@
 # Project working agreements
 
+## Branches
+
+Use descriptive lowercase kebab-case branch names without a `codex/` prefix.
+The development stack is `inngest-dev-server` → `vector-database-setup` →
+`loading-and-chunking`. Start loading and chunking work on the last branch.
+
 ## Build journal
 
 When making meaningful code, dependency, configuration, or architecture changes,
