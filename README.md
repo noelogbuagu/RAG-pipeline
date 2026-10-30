@@ -49,6 +49,7 @@ production configuration. Stop each server with Ctrl+C.
 ## Project files
 
 - `main.py`: FastAPI application and shared document ingestion placeholder.
+- `vector_db.py`: `QdrantStorage`, managing collections, point upserts, and search.
 - `pyproject.toml`: project metadata and dependencies.
 - `.python-version`: Python version used by uv.
 - `uv.lock`: dependency lockfile; commit updates when dependencies change.
@@ -56,8 +57,55 @@ production configuration. Stop each server with Ctrl+C.
 Use `uv add <package>` to add dependencies. Keep local documents in `data/`
 and credentials in `.env`; both are ignored by Git.
 
-Local Qdrant persistence will use `qdrant_storage/`, also ignored by Git.
-The folder exists; the application connection is not implemented yet.
+## Qdrant storage
+
+FastAPI opens one Qdrant client at startup and closes it on shutdown or reload.
+By default, it persists data in `qdrant_storage/`, which is ignored by Git.
+No Docker or separate Qdrant server is required for this local mode.
+
+Check the connection at http://127.0.0.1:8000/health/qdrant. A fresh database
+returns `{"status":"ok","collections":0}`. The document collection will be
+created when we configure an embedding model and its vector dimensions.
+
+Optional `.env` settings (see `.env.example`):
+
+- `QDRANT_PATH`: local storage directory, defaulting to `qdrant_storage`.
+  Relative paths resolve from the project root, regardless of the launch directory.
+- `QDRANT_URL`: when set, connects to a server instead of opening local storage,
+  for example `http://localhost:6333` for a future Docker setup.
+- `QDRANT_API_KEY`: optional credentials for the server connection.
+
+Restart Uvicorn after changing `.env`. Local mode requires one process owning
+the storage folder: use a single Uvicorn worker and have other applications
+access Qdrant through FastAPI rather than opening that folder themselves.
+Changing to a server URL does not migrate existing local data.
+
+Run connection tests with `uv run python -m unittest discover -s tests -v`.
+They use temporary storage and synthetic vectors, leaving the demo database alone.
+
+### Storage class
+
+`QdrantStorage` uses the synchronous `QdrantClient` for a straightforward local demo.
+FastAPI owns one instance at `app.state.vector_db`; reuse it instead of opening
+another client on the same folder. The class exposes:
+
+- `ensure_collection(collection_name, vector_size, distance=Distance.COSINE)`:
+  creates a missing collection or checks an existing collection's dimensions and
+  distance metric. Incompatible settings raise an error and preserve the data.
+- `upsert(collection_name, points)`: inserts or updates a list of `PointStruct`
+  objects by ID. Each point contains an embedding and optional document payload.
+- `search(collection_name, vector, limit=5)`: returns scored matches with payloads.
+- `close()`: releases the client, called by FastAPI during shutdown.
+
+Call these methods directly, without `await`. Create the collection before
+inserting points, using the chosen embedding model's vector size. Use unsigned
+integer IDs or UUID strings for points. The class stores and queries supplied
+vectors; it does not generate embeddings or parse documents.
+
+The health endpoint and Inngest placeholder are synchronous too. FastAPI's
+lifespan retains its required async context-manager interface, while opening and
+closing storage synchronously. For future remote or higher-concurrency use,
+revisit async clients and workload handling as described in the build journal.
 
 ## Dependencies
 
@@ -70,4 +118,5 @@ The folder exists; the application connection is not implemented yet.
 - Qdrant client for vector storage and retrieval.
 - python-dotenv for local environment configuration.
 
-Only FastAPI, Inngest, and dotenv are wired into the application so far.
+FastAPI, Inngest, dotenv, and the Qdrant connection are wired into the application.
+Document extraction, embedding, and indexing remain to be implemented.

@@ -237,3 +237,109 @@ When moving to Docker, use a separate server storage directory or named volume,
 then re-ingest documents or migrate points explicitly. The embedded client's
 files are not the Qdrant server's storage format. This ignored directory will
 not be included in a Git clone on the personal laptop.
+
+## 10. Connect the application to persistent Qdrant storage
+
+**Date:** 30 October 2026 · **Status:** Connection implemented and verified
+
+Added an asynchronous Qdrant client to FastAPI's lifespan in `main.py`.
+Startup creates the client and checks access by listing collections. Shutdown
+closes it, releasing the local storage lock so automatic reload can reopen the
+database. This keeps one client per application process rather than creating a
+new connection for each workflow invocation. The client is available as
+`app.state.qdrant` for future ingestion and retrieval code.
+
+Local mode uses `qdrant_storage/` by default. `QDRANT_PATH` can override this;
+relative paths are anchored to the project root. Setting `QDRANT_URL` selects
+server mode instead, with an optional `QDRANT_API_KEY`. These settings are
+documented in `.env.example`; existing personal `.env` values were not changed.
+The user's reserved imports remain in place.
+
+Added `GET /health/qdrant` to check connectivity and report the collection count.
+An unavailable database causes startup to fail; a connection failure after
+startup returns HTTP 503 from the health endpoint without exposing error details.
+
+Added three standard-library unittest cases in `tests/test_qdrant_connection.py`.
+They verify synthetic vector persistence and search across application restarts,
+storage-lock release, health and Inngest endpoints, server configuration selection,
+and client cleanup after failed startup. All three passed. The server-mode test
+uses a mock; an actual Docker or cloud Qdrant connection has not been tested.
+
+The running FastAPI server reloaded successfully and its health endpoint returned
+`{"status":"ok","collections":0}` using local storage. No new dependencies were
+needed. No document collection has been created: we still need to choose the
+embedding model and vector dimensions before implementing indexing. The
+document-ingestion function remains an explicit placeholder.
+
+For this embedded setup, run one Uvicorn worker and keep direct database access
+within FastAPI. Restart after `.env` changes; Python code reload does not reliably
+reload environment-file changes. The README includes configuration and test commands.
+
+## 11. Extract the QdrantStorage class
+
+**Date:** 30 October 2026 · **Status:** Implemented and tested
+
+Created `vector_db.py` with `QdrantStorage`. It imports Qdrant's models,
+`VectorParams`, `Distance`, and `PointStruct`, and uses `AsyncQdrantClient` so
+storage operations fit the existing async application. Its constructor opens
+persistent local storage at `qdrant_storage/` by default, anchoring relative paths
+to the project root. The optional server URL and API-key support from milestone
+10 remains available for the later personal-laptop setup; Docker is not required.
+
+The class can create or validate a collection, upsert points by ID, search for
+similar vectors with their payloads, and close the connection. Collection setup
+requires an explicit vector size; cosine distance is the default. Reopening a
+compatible collection preserves its points. A size or distance mismatch raises
+an error rather than recreating the collection and losing data.
+
+FastAPI now creates this class in its lifespan and exposes it at
+`app.state.vector_db`, replacing the direct client at `app.state.qdrant` from
+milestone 10. The health check uses the same instance. No client is created at
+module import, and the user's reserved imports were preserved.
+
+All five tests passed: the existing application connection checks plus storage
+tests for point replacement, nearest-vector search and payload retrieval,
+persistence across reopen, and data preservation after incompatible collection
+requests. Tests use temporary directories and synthetic vectors. The application
+still has no document collection or real embeddings; parsing, model selection,
+and integration of storage methods into the ingestion workflow remain next steps.
+
+## 12. Simplify the demo to synchronous database calls
+
+**Date:** 30 October 2026 · **Status:** Implemented and tested
+
+The owner chose synchronous code for the learning-focused team demo. Replaced
+`AsyncQdrantClient` with `QdrantClient` in `vector_db.py` and converted collection
+setup, upsert, search, and close into ordinary methods called without `await`.
+Local persistence, optional server configuration, and collection compatibility
+checks remain unchanged. This supersedes the async approach in milestones 10
+and 11; existing data does not need migration for this client change.
+
+Converted the health endpoint to a regular `def`, which FastAPI runs in its
+worker thread pool. Converted the ingestion placeholder to a regular function
+with `inngest.ContextSync`. FastAPI's lifespan still uses `asynccontextmanager`
+because that is its framework interface; its database calls are synchronous.
+Preserved the owner's imports for future work.
+
+Converted the tests to synchronous unittest cases and FastAPI TestClient. All
+six passed, covering persistence, search, collection safety, server configuration,
+failure cleanup, and synchronous Inngest handler registration and output.
+The run emitted a ResourceWarning from the installed Qdrant client's temporary
+SQLite thread-safety probe: its context manager does not explicitly close that
+probe connection. Application clients are explicitly closed, and the storage
+reopen tests passed. No dependency code was patched or warning suppressed.
+
+### Revisit on the personal laptop
+
+Synchronous calls are appropriate for this small demo but block their calling
+thread until complete. Docker alone does not require an async client. If remote
+database latency or concurrent requests become important, evaluate
+`AsyncQdrantClient` together with async workflow handlers, or deliberately run
+blocking work in workers. Embedded local operations do not automatically become
+faster just by adding `async` and `await`.
+
+Before expanding ingestion concurrency, assess shared-client access and SQLite
+thread affinity on the target machine; a single Uvicorn worker can still run
+multiple handler threads. A Qdrant server is the intended next step for shared
+or concurrent database use. Keep these choices separate from Docker installation
+and from the broader production-readiness work documented in milestone 8.
