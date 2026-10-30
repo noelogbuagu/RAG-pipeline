@@ -9,8 +9,8 @@ For the step-by-step development history and decisions, see the
 [build journal](BUILD_JOURNAL.md).
 
 The development branches form a stack: `inngest-dev-server` →
-`vector-database-setup` → `loading-and-chunking`. The last branch is the starting
-point for the next stage; it inherits the completed setup from the first two.
+`vector-database-setup` → `loading-and-chunking` → `streamlit-ui`.
+Each branch inherits the completed work from the preceding stages.
 
 ## Getting started
 
@@ -58,9 +58,49 @@ The client currently uses `is_production=False` explicitly for local development
 locally. Before deployment, replace the explicit development setting with
 production configuration. Stop each server with Ctrl+C.
 
+### Streamlit interface
+
+With FastAPI and Inngest running, start the UI in a third terminal:
+
+```sh
+uv run streamlit run streamlit_app.py --server.address 127.0.0.1
+```
+
+Open http://127.0.0.1:8501. Upload a PDF or Word `.docx` (up to 20 MiB), click
+**Ingest document**, and wait for indexing to complete. Then enter a question
+and click **Search** to see matching passages, scores, sources, and page labels.
+The interface currently displays retrieval results, not generated answers.
+Ingestion and queries use the configured OpenAI key and incur embedding charges.
+
+Uploads are stored under Git-ignored `data/uploads/<content-hash>/`. Filenames
+are sanitized and writes are atomic. Reuploading the same contents and filename
+uses the same source path; changed contents receive a different path. Files
+remain on disk until manually removed. Uploading a copy of a file previously
+ingested directly from `data/` uses a new source path and can create duplicate
+passages across those two sources. The backend's existing text/chunk limits
+still apply even when the file fits the UI upload limit.
+
+Explicit form submissions send events once per click. Status and results remain
+in the browser session across widget reruns. Status checks run every two seconds,
+with a five-second HTTP timeout, and pause after two minutes or a connection
+error. Timed UI refreshes stop for completed, failed, or paused runs.
+**Check this run again** resumes checking the same event; it does not
+cancel or resubmit it. Reloading/closing the browser loses that session's tracked
+results; events and runs remain in Inngest. A new submission replaces the tracked
+run of that kind in the UI without cancelling the previous run.
+
+`INNGEST_DEV_SERVER_URL` optionally changes the UI's event and status API address
+(default `http://127.0.0.1:8288`). Restart Streamlit after configuration changes.
+This is a local development interface: Streamlit and FastAPI must share the same
+project filesystem. Streamlit never opens the Qdrant storage directory itself.
+Both forms render before network work. The file picker enforces the 20 MiB
+limit, and the save helper validates it again. Run IDs live under **Run details**;
+retrieval shows a passage/source count and expands the first match by default.
+
 ## Project files
 
 - `main.py`: FastAPI application and Inngest ingestion and query workflows.
+- `streamlit_app.py`: PDF/Word upload, run status, and retrieved-passage interface.
 - `data_loader.py`: PDF/Word extraction, source-aware chunks, and embedding helper.
 - `vector_db.py`: `QdrantStorage`, managing collections, point upserts, and search.
 - `custom_types.py`: shared Pydantic models for chunks and pipeline results.
@@ -265,5 +305,5 @@ revisit async clients and workload handling as described in the build journal.
 - Pydantic for validation and serialization of shared pipeline models.
 
 FastAPI, Inngest, dotenv, document extraction/chunking, embeddings, Qdrant
-indexing and semantic search are wired into the application.
-Answer generation and the Streamlit UI remain future work.
+indexing, semantic search, and the Streamlit UI are wired into the application.
+Answer generation remains future work.

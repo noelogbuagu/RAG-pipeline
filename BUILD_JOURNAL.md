@@ -579,3 +579,103 @@ answers. A new query run incurs an embedding request. There is no relevance
 threshold or filtering of older document versions or partially ingested batches,
 so nearest matches require inspection and are not proof of an answer.
 
+## 19. Add the Streamlit upload and search interface
+
+**Date:** 30 October 2026 · **Status:** Implemented; UI tested with mocked event transport
+
+Adapted the owner's example into `streamlit_app.py`. It supports PDF and Word
+`.docx` and uses the existing `rag/ingest_document` event with `path`, plus
+`rag/query_documents` with `question` and `top_k`. Reused `RAGSearchRequest`,
+`RAGIngestResult`, and `RAGSearchResult` to validate inputs and run outputs.
+The UI displays retrieved passages, similarity scores, sources, chunk indices,
+and PDF page labels instead of expecting an answer field the backend does not
+produce yet. Uploaded text is rendered as text, not interpreted HTML/Markdown.
+
+Kept the interface synchronous using Inngest's `send_sync`, removing the need
+for `asyncio.run`. Standard-library HTTP requests read the run-status API, so
+no new dependency was needed. One `INNGEST_DEV_SERVER_URL` setting controls both
+event submission and status polling, avoiding mismatched server addresses.
+Streamlit does not import the FastAPI application or open local Qdrant storage;
+FastAPI remains its sole owning process. The processes share the project folder.
+
+Uploads go to Git-ignored `data/uploads/<content-hash>/<sanitized-name>` so they
+pass the backend path boundary. Filenames are stripped of path components,
+empty files and uploads over 20 MiB are rejected, and file writes are atomic.
+Identical contents and filename retain a stable path; changed contents use a
+different directory rather than overwriting an input being processed. Files are
+not automatically deleted. A copy previously ingested from another path remains
+a different source and may yield duplicate passages; older-version cleanup is
+still future work. Backend text/chunk limits also continue to apply.
+
+Forms submit only on explicit clicks, avoiding ingestion on every Streamlit
+rerun. Session state preserves event IDs and results while interacting with
+widgets. Fragments check run status every two seconds without a sleep loop;
+HTTP requests time out after five seconds. After two minutes or a polling error,
+checks pause and a button resumes checking the same event. This does not cancel
+or resend the workflow. Failed/cancelled runs point users to the dashboard.
+The UI tracks the latest submission of each kind per browser session; a new
+submission replaces that display, and a browser reload loses session tracking.
+The underlying events/runs remain in Inngest.
+
+All 33 tests passed. Added upload-path/content checks, synchronous event payload
+checks, HTTP response and timeout handling, and Streamlit AppTest coverage for
+upload completion, retrieved passages, blank questions, failure states, paused
+polling, retained results, and avoiding automatic resubmission on rerun. Event
+transport and run responses were mocked; no live workflow or OpenAI request was
+triggered. Ruff and whitespace checks passed. The app has not been launched as a
+separate server in this task; README documents the third-terminal startup command.
+
+Updated README and `.env.example`. Implementation references:
+[Inngest run-status/output API](https://www.inngest.com/docs/examples/fetch-run-status-and-output)
+and [Streamlit fragments](https://docs.streamlit.io/develop/concepts/architecture/fragments).
+
+## 20. Apply the installed Streamlit development skill
+
+**Date:** 30 October 2026 · **Status:** Implemented and tested
+
+Used the owner's newly installed `developing-with-streamlit` skill, its best
+practices, layout, performance, state, and testing references, and the installed
+Streamlit CLI's API documentation to improve the existing interface.
+
+Grouped headings inside their forms and added primary full-width submit buttons
+with Material icons, stable widget keys, and question guidance. Both forms now
+render before file/network work, keeping search controls available during slow
+requests. Enforced the 20 MiB limit in the uploader itself as well as the save
+helper. Upload validation and filesystem errors now have specific feedback,
+separate from event-delivery errors.
+
+The run fragment now receives a timer only while waiting. When a run completes,
+fails, or pauses, a full rerun removes its periodic refresh; results remain
+visible without repeated redraws. The resume button performs a full rerun to
+register the timer again, avoiding a fragment-only rerun request when the
+fragment is executing as part of a full app run. Added a regression test that
+resumes the same paused event through completion without sending another event.
+
+Moved event IDs into a Run details expander. Retrieval now summarizes passage
+and source counts, explains that similarity is not a confidence percentage,
+and initially expands only the first match. Native widgets handle all styling;
+no CSS, new dependencies, or theme overrides were added. Kept the project's
+existing `.env` configuration and testable `main()` entry point. Initialized
+per-session run keys together and bounded the cached client to one entry.
+
+All 35 tests passed, including updated AppTest coverage for timer shutdown,
+resume behavior, specific empty-upload feedback, the uploader limit, and retained
+results. Ruff and whitespace checks passed. Tests mocked transport and embeddings;
+no live document or paid API request was submitted. Found the existing Streamlit
+server listening on `127.0.0.1:8501` (PID 32584); no new server was started.
+
+## 21. Commit the backend and separate the Streamlit stage
+
+**Date:** 30 October 2026
+
+Committed the completed loading, ingestion, shared-model, and retrieval work on
+`loading-and-chunking` as `5ac2745`. Created `streamlit-ui` directly above it for
+the interface, UI tests, installed Streamlit skill links, and corresponding
+documentation. Split the README, environment example, and journal at the same
+boundary so the backend branch does not describe an interface it does not have.
+There were no existing Streamlit commits to move; the changes were uncommitted,
+so no published history was rewritten. Both stages were tested in the 35-test
+suite before this separation. Local PDFs, Qdrant data, and `.env` remain ignored.
+The installed skill entries are relative symlinks into the uv environment and
+require `uv sync` on a new checkout. Answer generation will continue on a new
+`answer-generation` branch based on `streamlit-ui`.
