@@ -121,6 +121,9 @@ class StreamlitAppTests(unittest.TestCase):
 
     def test_search_result_survives_rerun_without_sending_another_event(self):
         output = {
+            "answer": "The document explains a useful topic. [1]",
+            "sources": ["guide.pdf"],
+            "num_contexts": 1,
             "hits": [
                 {
                     "id": 1,
@@ -133,7 +136,7 @@ class StreamlitAppTests(unittest.TestCase):
                         "chunk_index": 0,
                     },
                 }
-            ]
+            ],
         }
         with (
             patch("streamlit_app.send_event", return_value="query-123") as send,
@@ -150,9 +153,10 @@ class StreamlitAppTests(unittest.TestCase):
             app.button[1].click().run()
             self.assertEqual(len(app.exception), 0)
             send.assert_called_once_with(
-                "rag/query_documents", {"question": "What is this about?", "top_k": 5}
+                "rag/answer_documents", {"question": "What is this about?", "top_k": 5}
             )
             self.assertIn("A useful passage", [text.value for text in app.text])
+            self.assertIn(output["answer"], [text.value for text in app.text])
             app.run()
             send.assert_called_once()
             fetch.assert_called_once_with("query-123")

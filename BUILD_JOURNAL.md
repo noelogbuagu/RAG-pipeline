@@ -679,3 +679,51 @@ suite before this separation. Local PDFs, Qdrant data, and `.env` remain ignored
 The installed skill entries are relative symlinks into the uv environment and
 require `uv sync` on a new checkout. Answer generation will continue on a new
 `answer-generation` branch based on `streamlit-ui`.
+
+## 22. Generate written answers with passage references
+
+**Date:** 30 October 2026 · **Status:** Implemented; automated tests use mocked APIs
+
+Published backend commit `5ac2745` on `loading-and-chunking` and Streamlit commit
+`50b4d27` on `streamlit-ui`. Continued development on `answer-generation`, based
+on the Streamlit branch, without rewriting existing history.
+
+Added `answer_generator.py` and the synchronous **RAG: Answer Documents** workflow,
+triggered by `rag/answer_documents`. The original retrieval-only event remains
+available. Both workflows use the same validation, question embedding, and Qdrant
+search steps. The answer workflow adds `generate-answer`, a separately saved and
+retryable step, so generation failures do not repeat successful retrieval.
+
+The helper calls the OpenAI Responses API with default model `gpt-5.4-mini`,
+configurable through `OPENAI_ANSWER_MODEL`. No new dependency was needed. The
+existing OpenAI key is reused, with a 45-second request timeout, SDK retries
+disabled in favor of Inngest retries, `store=False`, and a 2,048-token output
+limit. Changing the answer model does not affect stored embeddings.
+
+Passages need nonblank text and source metadata. Total passage text is capped at
+60,000 characters; oversized passages are skipped and included ones renumbered.
+An empty usable context produces a fixed explanation without a generation call.
+The prompt treats retrieved text as untrusted evidence, asks for plain-language
+answers grounded only in those passages, preserves uncertainty, and requests
+numbered references. Incomplete/empty responses and invalid numeric citation
+indices fail instead of publishing a partial or unmappable answer. These are
+structural checks, not factual verification or a guarantee against prompt injection.
+
+Activated `RAGQueryResult` with answer, unique context sources, context count,
+and ordered hits. Reference `[N]` maps to hit N, retaining its source/page payload.
+Sources represent all supplied context, which may include uncited passages.
+Streamlit now sends the answer event and shows an Answer section above Supporting
+passages. Model text is rendered as text, avoiding model-generated HTML or remote
+image rendering. Earlier retrieval-only results in browser session state remain
+displayable. No chat history or streaming implementation was added.
+
+All 41 tests passed. New tests verify prompt/data separation, citation mapping,
+context budgeting, empty-input behavior, model configuration, response validation,
+and generation retries with saved retrieval. Updated AppTest coverage checks the
+answer event, written text, supporting passages, and retention across reruns.
+OpenAI calls remain mocked; no live generation request or paid model-quality
+evaluation was performed. Ruff and whitespace checks passed. README and environment
+examples document usage, API charges, configuration, and remaining retrieval limits.
+
+References: [Responses API](https://developers.openai.com/api/reference/python/resources/responses)
+and [GPT-5.4 mini](https://developers.openai.com/api/docs/models/gpt-5.4-mini).

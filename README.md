@@ -2,14 +2,14 @@
 
 A retrieval-augmented generation pipeline for PDF and Word documents.
 Includes local FastAPI/Inngest, PDF/Word loading and chunking, OpenAI embeddings,
-and indexing and semantic search in persistent Qdrant storage. Answer generation
-will be added next.
+and indexing and semantic search in persistent Qdrant storage, with written
+answers grounded in retrieved passages.
 
 For the step-by-step development history and decisions, see the
 [build journal](BUILD_JOURNAL.md).
 
 The development branches form a stack: `inngest-dev-server` →
-`vector-database-setup` → `loading-and-chunking` → `streamlit-ui`.
+`vector-database-setup` → `loading-and-chunking` → `streamlit-ui` → `answer-generation`.
 Each branch inherits the completed work from the preceding stages.
 
 ## Getting started
@@ -68,9 +68,9 @@ uv run streamlit run streamlit_app.py --server.address 127.0.0.1
 
 Open http://127.0.0.1:8501. Upload a PDF or Word `.docx` (up to 20 MiB), click
 **Ingest document**, and wait for indexing to complete. Then enter a question
-and click **Search** to see matching passages, scores, sources, and page labels.
-The interface currently displays retrieval results, not generated answers.
-Ingestion and queries use the configured OpenAI key and incur embedding charges.
+and click **Ask** to get a written answer with numbered references. Supporting
+passages below it retain scores, sources, and page labels. Ingestion and questions
+use the configured OpenAI key; questions incur both embedding and generation charges.
 
 Uploads are stored under Git-ignored `data/uploads/<content-hash>/`. Filenames
 are sanitized and writes are atomic. Reuploading the same contents and filename
@@ -101,6 +101,7 @@ retrieval shows a passage/source count and expands the first match by default.
 
 - `main.py`: FastAPI application and Inngest ingestion and query workflows.
 - `streamlit_app.py`: PDF/Word upload, run status, and retrieved-passage interface.
+- `answer_generator.py`: synchronous, source-grounded answer generation via OpenAI.
 - `data_loader.py`: PDF/Word extraction, source-aware chunks, and embedding helper.
 - `vector_db.py`: `QdrantStorage`, managing collections, point upserts, and search.
 - `custom_types.py`: shared Pydantic models for chunks and pipeline results.
@@ -276,7 +277,47 @@ An existing empty collection returns `hits: []`. Search returns the nearest
 chunks without a relevance cutoff, so a returned match is not proof that the
 document answers the question. All stored versions are searchable, including
 older document versions and batches from incomplete ingestion runs. This stage
-retrieves passages; it does not generate an AI-written answer yet.
+retrieves passages only; use the separate answer workflow for written answers.
+
+## Generating written answers
+
+The Streamlit **Ask** button sends `rag/answer_documents`. To test it directly,
+invoke **RAG: Answer Documents** in Inngest with:
+
+```json
+{"question": "Why does pill retention look weaker in month one?", "top_k": 3}
+```
+
+Its steps are `validate-query` → `embed-query` → `search-qdrant` → `generate-answer`.
+It shares retrieval helpers with the search-only workflow. Generation has its
+own retry boundary, so a failed generation attempt reuses completed retrieval
+steps. The result contains `answer`, `sources`, `num_contexts`, and `hits`.
+Citation `[1]` refers to the first returned hit and `[2]` to the second.
+`sources` lists the unique sources supplied as context, not necessarily only
+those the model cited. The UI keeps earlier search-only session results readable.
+
+Set `OPENAI_API_KEY` in `.env`. `OPENAI_ANSWER_MODEL` optionally overrides the
+default `gpt-5.4-mini`; the model must support the Responses API and be available
+to your account. Restart FastAPI after changing `.env`. Changing this model does
+not change the embedding model or require reindexing.
+
+Generation sends the question and selected passage text to OpenAI, with a
+60,000-character text budget and a 2,048-token output limit. Oversized passages
+are skipped rather than cut mid-sentence; only the included passages appear in
+the result. Missing/blank text or source metadata is excluded. With no usable
+passages, it returns a fixed explanation without a generation request.
+Requests set `store=False`, use a 45-second timeout, and let Inngest handle retries.
+
+The prompt instructs the model to answer only from the passages, preserve caveats,
+cite numbered passages, ignore embedded instructions, and say when evidence is
+insufficient. Empty/incomplete responses and out-of-range numeric citations fail
+the step. These checks do not prove factual correctness or guarantee resistance
+to prompt injection: inspect the supporting passages. Existing old-version and
+partial-ingestion retrieval limitations still apply. API calls are mocked in
+the automated tests, so live model access and answer quality need a real run.
+
+API references: [Responses API](https://developers.openai.com/api/reference/python/resources/responses)
+and [GPT-5.4 mini](https://developers.openai.com/api/docs/models/gpt-5.4-mini).
 
 ## Shared models
 
@@ -284,8 +325,8 @@ Use model attributes in Python and `.model_dump()` when a dictionary is needed,
 such as a Qdrant payload. Inngest's `PydanticSerializer` and explicit `output_type`
 restore the loader model when replaying a stored step. The workflow returns
 `RAGIngestResult`; its JSON summary keeps the existing status/source/count fields.
-`RAGQueryResult` defines the future answer shape but is not used until answer
-generation is implemented.
+`RAGQueryResult` carries the written answer and the ordered passages used to
+generate it, preserving citation-to-source associations through serialization.
 
 The health endpoint and Inngest handler are synchronous too. FastAPI's
 lifespan retains its required async context-manager interface, while opening and
@@ -305,5 +346,6 @@ revisit async clients and workload handling as described in the build journal.
 - Pydantic for validation and serialization of shared pipeline models.
 
 FastAPI, Inngest, dotenv, document extraction/chunking, embeddings, Qdrant
-indexing, semantic search, and the Streamlit UI are wired into the application.
-Answer generation remains future work.
+indexing, semantic search, written answers, and the Streamlit UI are wired into
+the application. OCR, document-version cleanup, and production deployment remain
+future work.

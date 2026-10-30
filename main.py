@@ -18,12 +18,14 @@ from inngest.experimental import ai
 from pydantic import ValidationError
 from qdrant_client.models import PointStruct
 
+from answer_generator import generate_answer
 from custom_types import (
     DocumentChunk,
     RAGChunkAndSrc,
     RAGDocumentInfo,
     RAGIngestResult,
     RAGLoadedDocument,
+    RAGQueryResult,
     RAGSearchRequest,
     RAGSearchResult,
     RAGUpsertResult,
@@ -259,6 +261,26 @@ def search_documents(vectors: list[list[float]], top_k: int) -> RAGSearchResult:
     return app.state.vector_db.search(COLLECTION_NAME, vectors[0], limit=top_k)
 
 
+def retrieve_documents(
+    ctx: inngest.ContextSync,
+) -> tuple[RAGSearchRequest, RAGSearchResult]:
+    """Share the same durable retrieval steps between search and written answers."""
+    query = ctx.step.run(
+        "validate-query", validate_query, ctx.event.data, output_type=RAGSearchRequest
+    )
+    vectors = ctx.step.run(
+        "embed-query", embed_texts, [query.question], output_type=list[list[float]]
+    )
+    retrieved = ctx.step.run(
+        "search-qdrant",
+        search_documents,
+        vectors,
+        query.top_k,
+        output_type=RAGSearchResult,
+    )
+    return query, retrieved
+
+
 @inngest_client.create_function(
     fn_id="RAG: Query Documents",
     trigger=inngest.TriggerEvent(event="rag/query_documents"),
@@ -266,19 +288,26 @@ def search_documents(vectors: list[list[float]], top_k: int) -> RAGSearchResult:
     concurrency=[inngest.Concurrency(limit=1)],
 )
 def rag_query_documents(ctx: inngest.ContextSync) -> RAGSearchResult:
-    """Retrieve chunks for a question; answer generation is a later stage."""
-    query = ctx.step.run(
-        "validate-query", validate_query, ctx.event.data, output_type=RAGSearchRequest
-    )
-    vectors = ctx.step.run(
-        "embed-query", embed_texts, [query.question], output_type=list[list[float]]
-    )
+    """Retain the retrieval-only workflow for inspecting search quality."""
+    _, retrieved = retrieve_documents(ctx)
+    return retrieved
+
+
+@inngest_client.create_function(
+    fn_id="RAG: Answer Documents",
+    trigger=inngest.TriggerEvent(event="rag/answer_documents"),
+    output_type=RAGQueryResult,
+    concurrency=[inngest.Concurrency(limit=1)],
+)
+def rag_answer_documents(ctx: inngest.ContextSync) -> RAGQueryResult:
+    """Retrieve evidence, then generate a cited answer in its own retryable step."""
+    query, retrieved = retrieve_documents(ctx)
     return ctx.step.run(
-        "search-qdrant",
-        search_documents,
-        vectors,
-        query.top_k,
-        output_type=RAGSearchResult,
+        "generate-answer",
+        generate_answer,
+        query.question,
+        retrieved,
+        output_type=RAGQueryResult,
     )
 
 
@@ -314,5 +343,7 @@ def qdrant_health(request: Request) -> dict[str, str | int]:
 
 
 inngest.fast_api.serve(
-    app, inngest_client, functions=[rag_ingest_document, rag_query_documents]
+    app,
+    inngest_client,
+    functions=[rag_ingest_document, rag_query_documents, rag_answer_documents],
 )

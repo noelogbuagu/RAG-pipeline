@@ -100,8 +100,9 @@ class RAGSearchResult(pydantic.BaseModel):
 
 
 class RAGQueryResult(pydantic.BaseModel):
-    """Future answer response; answer generation is not implemented yet."""
+    """Written answer plus ordered context: citation [N] maps to hits[N - 1]."""
 
-    answer: str
+    answer: str = pydantic.Field(min_length=1)
     sources: list[str]
     num_contexts: int = pydantic.Field(ge=0)
+    hits: list[ScoredPoint]

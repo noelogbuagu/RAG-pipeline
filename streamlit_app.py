@@ -15,7 +15,12 @@ import inngest
 import streamlit as st
 from dotenv import load_dotenv
 
-from custom_types import RAGIngestResult, RAGSearchRequest, RAGSearchResult
+from custom_types import (
+    RAGIngestResult,
+    RAGQueryResult,
+    RAGSearchRequest,
+    RAGSearchResult,
+)
 
 PROJECT_DIR = Path(__file__).resolve().parent
 load_dotenv(PROJECT_DIR / ".env")
@@ -109,7 +114,7 @@ def track_event(kind: str, event_id: str, label: str) -> None:
 
 
 def display_output(kind: str, output: dict) -> None:
-    """Render our shared result models; search currently returns passages, not answers."""
+    """Show the written answer with numbered passages; retain older search results."""
     if kind == "ingestion":
         result = RAGIngestResult.model_validate(output)
         if result.status == "no_text":
@@ -119,6 +124,11 @@ def display_output(kind: str, output: dict) -> None:
                 f"Indexed {result.ingested} chunks. You can now search your documents."
             )
         return
+    if "answer" in output:
+        answer = RAGQueryResult.model_validate(output)
+        st.subheader("Answer")
+        st.text(answer.answer)
+        st.subheader("Supporting passages")
     result = RAGSearchResult.model_validate(output)
     if not result.hits:
         st.info("No passages were returned. Ingest a document successfully first.")
@@ -131,7 +141,7 @@ def display_output(kind: str, output: dict) -> None:
         payload = hit.payload or {}
         source = str(payload.get("source", "Unknown source"))
         with st.expander(
-            f"{index}. {Path(source).name} · score {hit.score:.3f}",
+            f"[{index}] {Path(source).name} · score {hit.score:.3f}",
             expanded=index == 1,
         ):
             # Treat uploaded document contents as text, not executable HTML or Markdown.
@@ -165,7 +175,16 @@ def display_run(kind: str) -> None:
                     output = run.get("output")
                     if isinstance(output, str):
                         output = json.loads(output)
-                    model = RAGIngestResult if kind == "ingestion" else RAGSearchResult
+                    # A session may still be tracking a retrieval-only run from before reload.
+                    model = (
+                        RAGIngestResult
+                        if kind == "ingestion"
+                        else (
+                            RAGQueryResult
+                            if isinstance(output, dict) and "answer" in output
+                            else RAGSearchResult
+                        )
+                    )
                     job["output"] = model.model_validate(output).model_dump()
                     job["phase"] = "completed"
                 elif job["status"] in {"Failed", "Cancelled"}:
@@ -211,9 +230,9 @@ def main() -> None:
     )
     for kind in ("ingestion", "query"):
         st.session_state.setdefault(kind, None)
-    st.title("Search your documents")
+    st.title("Ask your documents")
     st.caption(
-        "Upload PDF or Word documents, then find relevant passages. Answer generation comes next."
+        "Upload PDF or Word documents, then ask a question and check the passages behind the answer."
     )
     st.link_button(
         "Open Inngest dashboard",
@@ -239,7 +258,7 @@ def main() -> None:
     ingestion_output = st.container()
 
     with st.form("query_form"):
-        st.subheader("2. Search indexed documents")
+        st.subheader("2. Ask a question")
         question = st.text_input(
             "Your question",
             max_chars=2000,
@@ -256,7 +275,7 @@ def main() -> None:
             help="Return up to this many chunks, ranked by similarity.",
         )
         query = st.form_submit_button(
-            "Search",
+            "Ask",
             key="submit_query",
             type="primary",
             icon=":material/search:",
@@ -295,12 +314,12 @@ def main() -> None:
         else:
             try:
                 request = RAGSearchRequest(question=question, top_k=int(top_k))
-                with query_output, st.spinner("Sending search request…"):
-                    event_id = send_event("rag/query_documents", request.model_dump())
+                with query_output, st.spinner("Requesting an answer…"):
+                    event_id = send_event("rag/answer_documents", request.model_dump())
                 track_event("query", event_id, request.question)
             except Exception:
                 query_output.error(
-                    "Could not submit the search. Check the Inngest server and dashboard before retrying."
+                    "Could not submit the question. Check the Inngest server and dashboard before retrying."
                 )
     with ingestion_output:
         display_tracked_run("ingestion")
