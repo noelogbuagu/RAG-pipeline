@@ -5,12 +5,26 @@ Includes local FastAPI/Inngest, PDF/Word loading and chunking, OpenAI embeddings
 and indexing and semantic search in persistent Qdrant storage, with written
 answers grounded in retrieved passages.
 
+**Joining from the hack day? Start with [Team setup](TEAM_SETUP.md).**
+The `team-starter` branch packages the completed app with clone/setup instructions,
+a fictional sample document generator, sample questions, and customization notes.
+Everyone uses their own API key and local database; no Docker is required.
+
+```sh
+git clone --branch team-starter --single-branch https://github.com/noelogbuagu/RAG-pipeline.git
+cd RAG-pipeline
+uv sync --locked
+```
+
+The repository is private; accept the owner's GitHub invitation first.
+
 For the step-by-step development history and decisions, see the
 [build journal](BUILD_JOURNAL.md).
 
 The development branches form a stack: `inngest-dev-server` →
 `vector-database-setup` → `loading-and-chunking` → `streamlit-ui` → `answer-generation`.
 Each branch inherits the completed work from the preceding stages.
+`team-starter` starts from `answer-generation` and adds the teammate onboarding kit.
 
 ## Getting started
 
@@ -285,7 +299,7 @@ The Streamlit **Ask** button sends `rag/answer_documents`. To test it directly,
 invoke **RAG: Answer Documents** in Inngest with:
 
 ```json
-{"question": "Why does pill retention look weaker in month one?", "top_k": 3}
+{"question": "When must travel expenses be submitted?", "top_k": 3}
 ```
 
 Its steps are `validate-query` → `embed-query` → `search-qdrant` → `generate-answer`.

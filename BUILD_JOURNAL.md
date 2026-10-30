@@ -753,3 +753,36 @@ legacy outputs arriving through polling, and a stale imported model retaining
 new passage fields. The reproducer first failed with the reported missing-hits
 exception and passed after the fix. Ruff and whitespace checks passed. No paid
 API calls or document re-ingestion were needed for verification.
+
+## 24. Package a team starter after the hack day
+
+**Date:** 30 October 2026 · **Status:** Prepared and tested for sharing
+
+Created `team-starter` from the working `answer-generation` branch at `67ccfa7`,
+preserving the existing development branches and history. The GitHub repository
+is private; its visibility and collaborators were not changed. Teammates need
+repository access before the branch link or clone command will work. Each person
+runs their own local services and database with their own OpenAI API key.
+
+Added `TEAM_SETUP.md` with exact branch cloning, locked dependency installation,
+environment setup, three-terminal startup, sample questions, customization entry
+points, and troubleshooting. README now points new teammates to that guide.
+The setup keeps local Qdrant without Docker, so it remains suitable for managed
+laptops. This is a development starter, not a hosted or authenticated team service.
+
+Added a fictional handbook in `examples/team-handbook.txt` and a standard-library
+generator, `scripts/create_sample_document.py`, that creates an ignored
+`data/team-handbook.docx`. It preserves an existing file and makes no API calls.
+The sample lets teammates exercise Word ingestion and grounded answers without
+needing the original hack-day document. `.streamlit/secrets.toml` is now ignored
+alongside the existing environment, document, and database exclusions.
+
+All 45 tests passed, including reading the generated DOCX through the actual
+document loader and checking that a second generation preserves existing bytes.
+Ruff and whitespace checks passed. `uv sync --locked --dry-run` reported no
+environment changes. Generated the sample twice to verify the command-line flow.
+Checked that default private-data paths are ignored and that `.env`, `data`, and
+`qdrant_storage` have no committed path history; this is not a comprehensive
+secret audit. No live paid API request was made. Windows/Linux setup and a fresh
+installation on a teammate's machine remain unverified; the guide states those
+limits and the need for a live smoke test with their own credentials.

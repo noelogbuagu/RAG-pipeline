@@ -14,6 +14,7 @@ dist/
 !.env.example
 data/
 qdrant_storage/
+.streamlit/secrets.toml
 
 # macOS
 .DS_Store
