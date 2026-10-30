@@ -125,9 +125,22 @@ def display_output(kind: str, output: dict) -> None:
             )
         return
     if "answer" in output:
-        answer = RAGQueryResult.model_validate(output)
+        # Older saved answers contain a summary but no retrievable passage details.
+        answer = RAGQueryResult.model_validate(
+            {**output, "hits": output.get("hits", [])}
+        )
         st.subheader("Answer")
         st.text(answer.answer)
+        if "hits" not in output:
+            if answer.sources:
+                st.subheader("Sources")
+                for source in answer.sources:
+                    st.text(source)
+            st.info(
+                "This saved answer does not include its supporting passages. "
+                "Ask the question again to retrieve them and check its citations."
+            )
+            return
         st.subheader("Supporting passages")
     result = RAGSearchResult.model_validate(output)
     if not result.hits:
@@ -185,7 +198,17 @@ def display_run(kind: str) -> None:
                             else RAGSearchResult
                         )
                     )
-                    job["output"] = model.model_validate(output).model_dump()
+                    validation_output = output
+                    if (
+                        kind != "ingestion"
+                        and isinstance(output, dict)
+                        and "answer" in output
+                    ):
+                        validation_output = {**output, "hits": output.get("hits", [])}
+                    model.model_validate(validation_output)
+                    # Preserve the wire payload: an older imported model can silently
+                    # discard new fields during model_dump after Streamlit hot reload.
+                    job["output"] = output
                     job["phase"] = "completed"
                 elif job["status"] in {"Failed", "Cancelled"}:
                     job["phase"] = "failed"

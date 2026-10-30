@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 from urllib.error import URLError
 
+from pydantic import create_model
 from streamlit.testing.v1 import AppTest
 
 import streamlit_app as ui
@@ -20,6 +21,89 @@ def render_app():
 
 
 class StreamlitAppTests(unittest.TestCase):
+    def test_polled_legacy_answer_is_displayed_without_inventing_passages(self):
+        output = {
+            "answer": "An older answer.",
+            "sources": ["guide.pdf"],
+            "num_contexts": 3,
+        }
+        with (
+            patch("streamlit_app.send_event", return_value="legacy-123"),
+            patch(
+                "streamlit_app.fetch_run",
+                return_value={"status": "Completed", "output": json.dumps(output)},
+            ),
+        ):
+            app = AppTest.from_function(render_app).run()
+            app.text_input[0].set_value("Question")
+            app.button(key="submit_query").click().run()
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(app.session_state["query"]["phase"], "completed")
+            self.assertNotIn("hits", app.session_state["query"]["output"])
+            self.assertIn("An older answer.", [item.value for item in app.text])
+            self.assertIn("supporting passages", app.info[0].value)
+
+    def test_stale_answer_model_does_not_drop_new_passage_fields(self):
+        legacy_model = create_model(
+            "LegacyAnswer",
+            answer=(str, ...),
+            sources=(list[str], ...),
+            num_contexts=(int, ...),
+        )
+        output = {
+            "answer": "A useful answer. [1]",
+            "sources": ["guide.pdf"],
+            "num_contexts": 1,
+            "hits": [
+                {
+                    "id": 1,
+                    "version": 0,
+                    "score": 0.9,
+                    "payload": {"text": "Evidence", "source": "guide.pdf"},
+                }
+            ],
+        }
+        with (
+            patch("streamlit_app.RAGQueryResult", legacy_model),
+            patch("streamlit_app.send_event", return_value="answer-123"),
+            patch(
+                "streamlit_app.fetch_run",
+                return_value={"status": "Completed", "output": output},
+            ),
+        ):
+            app = AppTest.from_function(render_app).run()
+            app.text_input[0].set_value("Question")
+            app.button(key="submit_query").click().run()
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(
+                app.session_state["query"]["output"]["hits"], output["hits"]
+            )
+            self.assertIn("Evidence", [item.value for item in app.text])
+
+    def test_saved_answer_without_hits_remains_readable(self):
+        app = AppTest.from_function(render_app)
+        app.session_state["query"] = {
+            "event_id": "older-answer",
+            "label": "Question",
+            "phase": "completed",
+            "output": {
+                "answer": "An older answer. [1]",
+                "sources": ["guide.pdf"],
+                "num_contexts": 3,
+            },
+        }
+        with (
+            patch("streamlit_app.send_event") as send,
+            patch("streamlit_app.fetch_run") as fetch,
+        ):
+            app.run()
+            self.assertEqual(len(app.exception), 0)
+            self.assertIn("An older answer. [1]", [item.value for item in app.text])
+            self.assertIn("guide.pdf", [item.value for item in app.text])
+            self.assertIn("passages", app.info[0].value)
+            send.assert_not_called()
+            fetch.assert_not_called()
+
     def test_upload_submission_uses_document_event_and_reports_completion(self):
         upload = Mock()
         upload.name = "notes.docx"

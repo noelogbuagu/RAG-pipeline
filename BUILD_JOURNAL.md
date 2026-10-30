@@ -727,3 +727,29 @@ examples document usage, API charges, configuration, and remaining retrieval lim
 
 References: [Responses API](https://developers.openai.com/api/reference/python/resources/responses)
 and [GPT-5.4 mini](https://developers.openai.com/api/docs/models/gpt-5.4-mini).
+
+## 23. Preserve answer passages across Streamlit reloads
+
+**Date:** 30 October 2026 · **Status:** Fixed and regression-tested
+
+Investigated the reported `RAGSearchResult.hits` validation error when displaying
+an answer containing only answer text, source names, and a context count.
+An AppTest with an older imported answer model reproduced the exact traceback:
+validation accepted the newer payload, but `.model_dump()` silently discarded
+the newer `hits` field before saving it in session state. This explains how a
+long-lived Streamlit process can lose passages after a code/model update even
+when the backend supplies them. A separate test reproduced saved legacy answers
+that already lack the field.
+
+The UI now validates incoming results without replacing the received payload
+with an older model's serialized fields. Existing answers without `hits` retain
+their answer and source list and show an explicit explanation that supporting
+passages are unavailable; asking again obtains a fresh result. It does not invent
+passages or reinterpret the old context count as an empty retrieval. Compatibility
+handling stays in the UI; backend answer and search contracts still require hits.
+
+All 44 tests passed, including new coverage for already-saved legacy answers,
+legacy outputs arriving through polling, and a stale imported model retaining
+new passage fields. The reproducer first failed with the reported missing-hits
+exception and passed after the fix. Ruff and whitespace checks passed. No paid
+API calls or document re-ingestion were needed for verification.
