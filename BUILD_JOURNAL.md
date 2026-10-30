@@ -786,3 +786,45 @@ Checked that default private-data paths are ignored and that `.env`, `data`, and
 secret audit. No live paid API request was made. Windows/Linux setup and a fresh
 installation on a teammate's machine remain unverified; the guide states those
 limits and the need for a live smoke test with their own credentials.
+
+## 25. Prepare the public repository and real PDF example
+
+**Date:** 30 October 2026 · **Status:** Tested; ready for publication
+
+The owner requested public GitHub access and a conventional repository that
+teammates can clone without choosing a special branch. Prepared the completed
+app for a fast-forward of `main`, keeping the earlier development history and
+the `team-starter` checkpoint. Updated the agent branch guidance accordingly.
+Repository visibility will be changed to public after pushing these changes.
+
+Reorganized README around prerequisites, locked dependency installation, the
+environment file, three-terminal startup, and a first upload/question. Added a
+table explaining every direct dependency, including Boto3's reserved status:
+Bedrock is not implemented and AWS credentials are not needed. Detailed internals
+now live in `docs/ARCHITECTURE.md`; installation and runtime fixes live in
+`docs/TROUBLESHOOTING.md`. `TEAM_SETUP.md` remains a short pointer so earlier
+shared links still work. The example environment exposes an empty API-key field
+ready to fill in. Existing functions already have docstrings; updated the backend
+module description and annotated the owner's reserved imports for linting without
+removing them. Application behavior and dependencies are unchanged.
+
+Removed the fictional handbook, its generator, its generator-specific test, and
+the generated local handbook. Included the owner's unchanged `docling.pdf` as
+`examples/docling.pdf`, with source/version attribution, a verified CC BY 4.0
+license link, checksum, and questions with expected evidence. This is the public
+Docling Technical Report (arXiv:2408.09869v5); Docling itself is not used by this
+application. The public example is separate from ignored user uploads.
+
+Fetched remote refs and scanned 66 historical file blobs across eight published
+refs for common API token formats, private keys, credential-bearing URLs, and
+private-data paths. No matches were found. This targeted check is not a guarantee
+that every possible secret format is absent. Publishing exposes existing branches
+and history, including earlier versions of the fictional sample; current files
+remove it without rewriting history.
+
+All 44 remaining tests passed. Ruff lint/format and whitespace checks passed.
+The actual PDF loader extracted all nine pages into 18 source-labelled chunks,
+with a serialized chunk result of 58,862 bytes, within workflow limits. The copied
+PDF's checksum matches the supplied file. No OpenAI requests or production
+deployment were performed; live credentials and cross-platform setup still need
+testing in each user's environment.

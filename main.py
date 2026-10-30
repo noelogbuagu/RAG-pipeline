@@ -1,6 +1,6 @@
-"""FastAPI lifecycle and the synchronous Inngest document workflow."""
+"""FastAPI lifecycle and synchronous ingestion, retrieval, and answer workflows."""
 
-import datetime
+import datetime  # noqa: F401 - Reserved by the project owner for upcoming work.
 import hashlib
 import json
 import logging
@@ -14,7 +14,7 @@ import inngest
 import inngest.fast_api
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from inngest.experimental import ai
+from inngest.experimental import ai  # noqa: F401 - Reserved for future AI steps.
 from pydantic import ValidationError
 from qdrant_client.models import PointStruct
 

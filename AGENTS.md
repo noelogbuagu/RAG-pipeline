@@ -3,8 +3,9 @@
 ## Branches
 
 Use descriptive lowercase kebab-case branch names without a `codex/` prefix.
-The development stack is `inngest-dev-server` → `vector-database-setup` →
-`loading-and-chunking`. Start loading and chunking work on the last branch.
+Create new feature branches from `main`, which contains the ready-to-run app.
+`team-starter` is a sharing checkpoint. Earlier development branches preserve
+the build stages; see `BUILD_JOURNAL.md` when investigating their history.
 
 ## Build journal
 
