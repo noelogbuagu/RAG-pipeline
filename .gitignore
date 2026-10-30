@@ -16,3 +16,4 @@ data/
 
 # macOS
 .DS_Store
+*.swp
