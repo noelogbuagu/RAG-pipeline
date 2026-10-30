@@ -1,6 +1,5 @@
 import tempfile
 import unittest
-from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
@@ -11,8 +10,9 @@ from main import app, rag_ingest_document
 
 class QdrantConnectionTests(unittest.TestCase):
     def test_data_survives_application_restart(self):
-        with tempfile.TemporaryDirectory() as directory, patch.dict(
-            "os.environ", {"QDRANT_URL": "", "QDRANT_PATH": directory}
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict("os.environ", {"QDRANT_URL": "", "QDRANT_PATH": directory}),
         ):
             with TestClient(app):
                 client = app.state.vector_db.client
@@ -24,10 +24,13 @@ class QdrantConnectionTests(unittest.TestCase):
                 )
                 client.upsert(
                     "test_documents",
-                    points=[models.PointStruct(
-                        id=1, vector=[1.0, 0.0, 0.0],
-                        payload={"text": "Synthetic document"},
-                    )],
+                    points=[
+                        models.PointStruct(
+                            id=1,
+                            vector=[1.0, 0.0, 0.0],
+                            payload={"text": "Synthetic document"},
+                        )
+                    ],
                 )
 
             # Reopening also proves shutdown released the local storage lock.
@@ -43,9 +46,13 @@ class QdrantConnectionTests(unittest.TestCase):
 
     def test_server_configuration_and_unavailable_health(self):
         client = Mock()
-        with patch.dict("os.environ", {
-            "QDRANT_URL": "http://localhost:6333", "QDRANT_API_KEY": "test-key"
-        }), patch("vector_db.QdrantClient", return_value=client) as constructor:
+        with (
+            patch.dict(
+                "os.environ",
+                {"QDRANT_URL": "http://localhost:6333", "QDRANT_API_KEY": "test-key"},
+            ),
+            patch("vector_db.QdrantClient", return_value=client) as constructor,
+        ):
             with TestClient(app) as http:
                 constructor.assert_called_once_with(
                     url="http://localhost:6333", api_key="test-key"
@@ -67,9 +74,3 @@ class QdrantConnectionTests(unittest.TestCase):
 
     def test_ingestion_handler_is_synchronous(self):
         self.assertFalse(rag_ingest_document.is_handler_async)
-        result = rag_ingest_document._handler(
-            SimpleNamespace(event=SimpleNamespace(name="rag/ingest_document"))
-        )
-        self.assertEqual(result, {
-            "status": "not_implemented", "event": "rag/ingest_document"
-        })

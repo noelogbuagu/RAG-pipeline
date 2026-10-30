@@ -402,3 +402,180 @@ These are stacked branches: vector setup includes the Inngest commits, and
 loading/chunking includes both earlier stages. Loading and chunking has not yet
 been implemented. Earlier journal entries retain the old branch names where
 they describe historical actions.
+
+## 15. Review and connect document loading and chunking
+
+**Date:** 30 October 2026 · **Status:** Loading/chunking implemented; embedding helper tested without live API calls
+
+Reviewed the owner's new `data_loader.py` alongside `vector_db.py` and `main.py`.
+Fixed syntax, the PDF reader keyword, the embedding model identifier, and the
+embedding function's placement. Retained the intended synchronous approach.
+The existing vector database module already fits the required storage interface
+and needed no changes in this stage.
+
+Generalized `load_and_chunk_pdf` to `load_and_chunk_document` so the same workflow
+supports PDF and Word `.docx`. Each chunk carries its text, resolved source path,
+and document-wide chunk index; PDF page labels are preserved when available.
+Empty text is skipped. SentenceSplitter's 1000/200 settings measure tokens, not
+characters. Splitting occurs within each reader document, so PDF pages remain
+separate and overlap does not cross page boundaries. OCR and legacy `.doc`
+conversion are not implemented.
+
+The owner's model choice is now `text-embedding-3-large`, with `EMBED_DIM = 3072`.
+`embed_texts` requests this dimension explicitly, batches loader chunks in groups
+of 64, restores input order using response indices, and validates counts and
+dimensions. Empty input makes no request; blank text is rejected. Client creation
+is deferred until embedding is requested, so loading files and starting FastAPI
+do not require an OpenAI key. No live embedding request was made during this work.
+
+Connected the synchronous Inngest handler to a `load-and-chunk` step. Events now
+need `data.path`, such as `data/example.pdf`. The handler resolves paths and
+restricts them to the project's `data/` directory, including resolving symlinks
+before checking the boundary. It reports `chunked` or `no_text`, the source,
+chunk count, and `indexed: false`. It does not claim that vectors were stored.
+
+All 11 tests passed. Generated PDF and DOCX fixtures verify actual extraction,
+token-sized splitting, and provenance. Mocked OpenAI responses verify batching,
+ordering, invalid responses, and dimensions. Handler tests check the loading
+step and path boundary; the existing Qdrant suite remains green. The embedding
+API and an actual Inngest document run were not exercised. Future indexing must
+use `EMBED_DIM` when creating the collection and pair vectors with chunk payloads.
+
+Updated README and `.env.example`. An empty `custom_types.py` appeared during
+the review and was left untouched for the owner's ongoing work.
+
+## 16. Apply shared models and clean up the Python modules
+
+**Date:** 30 October 2026 · **Status:** Implemented and tested
+
+Reviewed the owner's populated `custom_types.py` and corrected the Pydantic
+base-class spelling and inconsistent optional source annotation. Source IDs are
+required for loader results. Added field constraints for nonnegative counts and
+chunk indices. Pydantic is now a direct project dependency rather than only a
+transitive dependency.
+
+Moved the chunk contract into `custom_types.py` as a `DocumentChunk` model.
+`load_and_chunk_document` now returns `RAGChunkAndSrc`, containing typed chunks
+and the document source ID. The Inngest step declares this `output_type`, allowing
+its existing Pydantic serializer to restore models on replay. The workflow
+returns `RAGIngestResult`, while retaining the previous JSON summary fields and
+explicit `indexed: false` behavior.
+
+Applied `RAGUpsertResult` to the storage write method: `ingested` counts submitted
+points after a successful call, including replacements; it is not a count of
+new documents. Empty writes report zero. Applied `RAGSearchResult` to search:
+its `.hits` remain the authoritative ranked points with complete payloads.
+`.contexts` and `.sources` are derived Python properties for convenience; sources
+are deduplicated in first-hit order and must not be zipped with the contexts.
+Serialization preserves hits, so the text/source/page associations survive.
+`RAGQueryResult` is corrected and documented for the later answer-generation stage.
+
+Added module, model, and function docstrings; organized imports and formatting
+with Ruff; named the embedding batch-size constant. Preserved imports the owner
+reserved for future work. No new framework or abstraction layer was introduced.
+
+Updated all current callers and tests for model attributes and `.hits` access.
+All 14 tests passed, including model JSON round trips, Inngest serializer replay,
+source-preserving search views, write counts/error propagation, actual PDF/DOCX
+extraction, and existing storage checks. Embedding calls remain mocked; no live
+model API request or answer-generation implementation was added. README documents
+the new contracts and dictionary conversion with `.model_dump()`.
+
+## 17. Make ingestion observable through durable steps
+
+**Date:** 30 October 2026 · **Status:** Implemented; tested with mocked embeddings
+
+Expanded `rag_ingest_document` into separate named steps so the development
+dashboard shows what is happening and which stage failed. `validate-document`
+checks the event path and file format, then returns the source, file name, size,
+and SHA-256 fingerprint. `extract-text` calls `load_document`; `chunk-text` calls
+`chunk_document`. New shared models (`RAGDocumentInfo`, `DocumentSection`, and
+`RAGLoadedDocument`) carry these intermediate results. Kept the existing
+`load_and_chunk_document` wrapper for simple callers. Extraction verifies the
+fingerprint before and after reading, preventing a changed file from silently
+being indexed under an earlier version's identity.
+
+Connected the existing embedding and storage helpers to the workflow.
+`prepare-collection` checks that an OpenAI key exists and creates or validates
+the `documents-openai-3-large-3072` collection with 3072 dimensions and cosine
+distance. Numbered `embed-batch-N` and `upsert-batch-N` steps process up to 16
+chunks per batch, keeping vectors paired with their original chunk payloads.
+`summarize-ingestion` reports `indexed`, source, chunk count, ingested count,
+and collection only after all writes succeed. Empty documents return `no_text`
+without creating a collection or requesting embeddings. Real nonempty runs now
+require an OpenAI key and incur embedding API charges.
+
+Passed helpers and positional arguments directly to `ctx.step.run`; lambdas add
+no value here. Explicit output types and the Pydantic serializer restore models
+when successful steps replay. Separating embedding from upserting lets a failed
+write reuse the completed embedding step. This is not an exactly-once guarantee
+for the external API: a request can succeed before its step output is saved,
+and a retry in that interval can repeat it.
+
+Used deterministic UUID point IDs incorporating source, file fingerprint,
+embedding configuration, chunk index, and text. Repeated writes for the same
+version replace the same points. A separate ingestion run still regenerates
+embeddings; there is no cross-run embedding cache. Changed files produce new
+versions, and automatic removal of old versions remains future work. An ingestion
+failure may leave earlier batches stored; whole-document publication is not atomic.
+
+Added conservative demo limits of 256 chunks and 2 MiB per extracted/chunked text
+result to bound saved run state. Larger inputs fail before embedding. For a
+production design, store large intermediates externally and pass references.
+Inngest concurrency is limited to one executing step, not one entire run. The
+synchronous Qdrant wrapper now serializes its methods with a lock and permits
+SQLite access across worker threads, since FastAPI health checks and Inngest
+steps may use different threads. Call wrapper methods rather than bypassing the
+lock through `.client`; local storage still requires one application process.
+
+All 21 tests passed. Tests cover named steps and serialized replay, unchanged-file
+reimports, a lost write acknowledgement followed by retry without re-embedding,
+source/page associations, empty input, invalid and symlinked paths, edited files,
+state limits, missing credentials, incompatible collection settings, and worker
+thread access. Existing real PDF/DOCX extraction and temporary storage tests also
+pass. OpenAI responses were mocked; no live paid embedding request was made.
+Updated README and `.env.example` to describe the now-connected indexing workflow.
+Ruff checks (excluding intentionally reserved imports) and `git diff --check`
+passed. The running FastAPI server reloaded successfully; its Qdrant health
+endpoint returned `status: ok` with zero collections in the untouched demo store.
+
+Reference: Inngest's [Python step.run documentation](https://www.inngest.com/docs/reference/python/steps/run),
+[step limits and retry behavior](https://www.inngest.com/docs/durable-execution/primitives/step-run),
+and [step concurrency](https://www.inngest.com/docs/functions/concurrency).
+
+## 18. Query indexed documents from the Inngest dashboard
+
+**Date:** 30 October 2026 · **Status:** Implemented; tested with mocked query embeddings
+
+The storage class already supported vector search, but there was no workflow to
+turn a question into a query vector. Added synchronous `rag_query_documents` in
+`main.py`, registered as **RAG: Query Documents**, triggered by
+`rag/query_documents`. Event data contains `question` and optional `top_k`.
+The tutorial screenshot shows ingestion; this new function handles retrieval.
+
+Added three visible steps: `validate-query`, `embed-query`, and `search-qdrant`.
+`RAGSearchRequest` trims surrounding whitespace, requires a nonblank question of
+at most 2000 characters, and accepts a strict integer limit from 1 to 20 (default
+5). Validation checks collection settings and API-key presence before embedding.
+The shared embedding helper uses the same model and 3072 dimensions as ingestion.
+Successful embedding outputs can replay when a subsequent search retries.
+
+Reused `QdrantStorage.search` and `RAGSearchResult`, preserving ranked hits, scores,
+and each chunk's source/page payload. Added a read-only `validate_collection`
+method and reused its compatibility check in `ensure_collection`. Queries never
+create or recreate collections: missing storage reports that a document must be
+ingested first. An existing empty collection returns an empty hit list.
+
+All 26 tests passed, including real temporary Qdrant retrieval with mocked
+embeddings, top-k ranking and provenance, serialized step replay, search retries
+without re-embedding, invalid input, missing/incompatible collections, and missing
+credentials. Ruff checks excluding intentionally reserved imports passed. No live
+OpenAI calls were made; semantic relevance of real model embeddings was not tested.
+README includes both dashboard invocation data and a complete event example;
+`.env.example` now notes that queries also require an embedding API key.
+
+This is retrieval only; `RAGQueryResult` remains reserved for future generated
+answers. A new query run incurs an embedding request. There is no relevance
+threshold or filtering of older document versions or partially ingested batches,
+so nearest matches require inspection and are not proof of an answer.
+

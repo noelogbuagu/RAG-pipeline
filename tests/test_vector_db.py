@@ -19,14 +19,26 @@ class QdrantStorageTests(unittest.TestCase):
                     4: {"text": "Chunk without source"},
                 }
                 vectors = {
-                    1: [1.0, 0.0, 0.0], 2: [0.8, 0.6, 0.0],
-                    3: [0.6, 0.8, 0.0], 4: [0.0, 1.0, 0.0],
+                    1: [1.0, 0.0, 0.0],
+                    2: [0.8, 0.6, 0.0],
+                    3: [0.6, 0.8, 0.0],
+                    4: [0.0, 1.0, 0.0],
                 }
-                storage.upsert("documents", [
-                    PointStruct(id=point_id, vector=vectors[point_id], payload=payload)
-                    for point_id, payload in payloads.items()
-                ])
-                hits = storage.search("documents", [1.0, 0.0, 0.0], limit=4)
+                storage.upsert(
+                    "documents",
+                    [
+                        PointStruct(
+                            id=point_id, vector=vectors[point_id], payload=payload
+                        )
+                        for point_id, payload in payloads.items()
+                    ],
+                )
+                result = storage.search("documents", [1.0, 0.0, 0.0], limit=4)
+                hits = result.hits
+                self.assertEqual(result.sources, ["guide.pdf", "notes.docx"])
+                self.assertEqual(
+                    result.contexts, [p["text"] for p in payloads.values()]
+                )
                 self.assertEqual([hit.id for hit in hits], [1, 2, 3, 4])
                 for hit in hits:
                     self.assertEqual(hit.payload, payloads[hit.id])
@@ -40,20 +52,32 @@ class QdrantStorageTests(unittest.TestCase):
             storage = QdrantStorage(directory)
             try:
                 storage.ensure_collection("documents", vector_size=3)
-                storage.upsert("documents", [
-                    PointStruct(id=1, vector=[1.0, 0.0, 0.0], payload={"text": "old"}),
-                    PointStruct(id=2, vector=[0.0, 1.0, 0.0], payload={"text": "other"}),
-                ])
-                storage.upsert("documents", [
-                    PointStruct(id=1, vector=[1.0, 0.0, 0.0], payload={"text": "updated"}),
-                ])
+                storage.upsert(
+                    "documents",
+                    [
+                        PointStruct(
+                            id=1, vector=[1.0, 0.0, 0.0], payload={"text": "old"}
+                        ),
+                        PointStruct(
+                            id=2, vector=[0.0, 1.0, 0.0], payload={"text": "other"}
+                        ),
+                    ],
+                )
+                storage.upsert(
+                    "documents",
+                    [
+                        PointStruct(
+                            id=1, vector=[1.0, 0.0, 0.0], payload={"text": "updated"}
+                        ),
+                    ],
+                )
             finally:
                 storage.close()
 
             storage = QdrantStorage(directory)
             try:
                 storage.ensure_collection("documents", vector_size=3)
-                hits = storage.search("documents", [1.0, 0.0, 0.0], limit=1)
+                hits = storage.search("documents", [1.0, 0.0, 0.0], limit=1).hits
                 self.assertEqual(len(hits), 1)
                 self.assertEqual(hits[0].id, 1)
                 self.assertEqual(hits[0].payload["text"], "updated")
@@ -67,13 +91,16 @@ class QdrantStorageTests(unittest.TestCase):
             storage = QdrantStorage(directory)
             try:
                 storage.ensure_collection("documents", vector_size=3)
-                storage.upsert("documents", [
-                    PointStruct(id=1, vector=[1.0, 0.0, 0.0]),
-                ])
+                storage.upsert(
+                    "documents",
+                    [
+                        PointStruct(id=1, vector=[1.0, 0.0, 0.0]),
+                    ],
+                )
                 for size, distance in [(4, Distance.COSINE), (3, Distance.DOT)]:
                     with self.assertRaisesRegex(ValueError, "incompatible"):
                         storage.ensure_collection("documents", size, distance)
-                hits = storage.search("documents", [1.0, 0.0, 0.0])
+                hits = storage.search("documents", [1.0, 0.0, 0.0]).hits
                 self.assertEqual(hits[0].id, 1)
             finally:
                 storage.close()
