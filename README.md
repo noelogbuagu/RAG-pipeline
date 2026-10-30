@@ -4,6 +4,9 @@ A retrieval-augmented generation pipeline for PDF and Word documents.
 Includes a local FastAPI/Inngest setup. Document ingestion, retrieval, and
 answer generation will be added next.
 
+For the step-by-step development history and decisions, see the
+[build journal](BUILD_JOURNAL.md).
+
 ## Getting started
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.14 or later.
@@ -52,6 +55,9 @@ production configuration. Stop each server with Ctrl+C.
 
 Use `uv add <package>` to add dependencies. Keep local documents in `data/`
 and credentials in `.env`; both are ignored by Git.
+
+Local Qdrant persistence will use `qdrant_storage/`, also ignored by Git.
+The folder exists; the application connection is not implemented yet.
 
 ## Dependencies
 
