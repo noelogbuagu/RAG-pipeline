@@ -1,0 +1,18 @@
+# Python and local environments
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Credentials and local source documents
+.env
+.env.*
+!.env.example
+data/
+
+# macOS
+.DS_Store

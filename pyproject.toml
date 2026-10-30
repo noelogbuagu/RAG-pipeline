@@ -1,0 +1,19 @@
+[project]
+name = "rag-pipeline"
+version = "0.1.0"
+description = "A retrieval-augmented generation pipeline for PDF and Word documents."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "boto3>=1.43.122",
+    "docx2txt>=0.9",
+    "fastapi>=0.162.0",
+    "inngest>=0.5.19",
+    "llama-index-core>=0.14.25",
+    "llama-index-readers-file>=0.7.0",
+    "openai>=3.41.0",
+    "python-dotenv>=1.2.4",
+    "qdrant-client>=1.20.0",
+    "streamlit>=1.66.1",
+    "uvicorn>=0.54.0",
+]
