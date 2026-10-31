@@ -6,6 +6,7 @@ FastAPI, OpenAI, and local Qdrant storage.
 
 **Runs locally. No Docker, AWS account, or hosted database required.**
 You need your own OpenAI API key; embedding and answer requests incur API charges.
+Deploying for a team? See [production deployment](docs/DEPLOYMENT.md).
 
 ## What to install
 
@@ -211,4 +212,5 @@ collection. Changing only the answer model does not.
   with your credentials; cross-platform setup has not been verified end to end.
 
 More: [Troubleshooting](docs/TROUBLESHOOTING.md) ·
-[Architecture](docs/ARCHITECTURE.md) · [Build journal](BUILD_JOURNAL.md)
+[Architecture](docs/ARCHITECTURE.md) · [Production deployment](docs/DEPLOYMENT.md) ·
+[Build journal](BUILD_JOURNAL.md)

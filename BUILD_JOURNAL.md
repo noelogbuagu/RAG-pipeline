@@ -857,3 +857,51 @@ filter in `tests/test_streamlit_app.py`, installed in `setUpModule` and removed 
 `tearDownModule`, that hides only that message from the
 `streamlit.runtime.scriptrunner_utils.script_run_context` logger. Other Streamlit
 warnings still appear. Application code is unchanged; all 44 tests still pass.
+
+## 27. Package a production deployment for one team
+
+**Date:** 31 October 2026 · **Status:** Built and tested on a laptop; not yet run on a server
+
+The app began as a local demo (milestone 8 listed what production would still need:
+authentication, network controls, backups, monitoring, and production Inngest
+settings). The owner chose a team deployment with shared documents, Docker Compose on
+one server, OIDC sign-in through a reverse proxy, and self-hosted Inngest. Work is on
+the `production-deployment` branch; local development is unchanged.
+
+**Application changes.** Added `config.py`, which reads `APP_ENV` (default
+`development`). In production the app requires `OPENAI_API_KEY`, the Inngest event and
+signing keys, `INNGEST_BASE_URL`, and `QDRANT_URL`, and stops at startup with one message
+naming anything missing instead of failing halfway through a paid workflow. Both the
+FastAPI app and Streamlit now take their Inngest mode, address, and event key from the
+environment instead of the hard-coded development settings. Streamlit sends the signing
+key when reading run status, because the self-hosted server answers 401 without it. In
+production the UI hides the Inngest dashboard links, since that dashboard is private.
+Qdrant server mode already existed through `QDRANT_URL`; no storage code changed.
+
+**Stack (`deploy/`, `Dockerfile`).** One image runs both the API and the UI as an
+unprivileged user, with the tokenizer downloaded at build time. Compose runs Caddy
+(automatic HTTPS, 25 MB request limit, security headers), oauth2-proxy (OIDC login
+with PKCE and an email-domain allowlist), the UI, the API, self-hosted Inngest backed by
+Postgres and Redis, and a Qdrant server protected by an API key. Only Caddy is public;
+Inngest's dashboard is bound to the server's loopback and reached by SSH tunnel because it
+has no login of its own. The API and UI share an `uploads` volume, because the workflow
+reads files the UI saved. `deploy/backup.sh` backs up Postgres, a Qdrant snapshot per
+collection, and the uploads, then checks the files. `docs/DEPLOYMENT.md` covers setup,
+operation, restore, and security notes; `deploy/.env.production.example` lists every
+setting (the real file is ignored by Git).
+
+**Checks actually performed.** 49 unit tests pass (5 new, covering the settings, the
+startup guard, and the run-status header). The image built and all services became
+healthy. Inngest registered all three functions with signed requests. Through the
+Streamlit UI, `docling.pdf` ingested as 18 chunks against the Qdrant server and the
+question about table structure answered "TableFormer" with citations, consuming live
+OpenAI calls. Unauthenticated requests, including the websocket path, were redirected to
+the login provider, and an oversize upload was refused. The backup script ran, and the
+Qdrant snapshot restored: the collection was deleted and came back with all 18 points.
+Ruff reports the same 10 pre-existing findings as `main` and formatting is clean.
+
+**Not verified.** A real OIDC login with a registered client and domain, certificate
+issuance on a public domain, the websocket through an authenticated session, the Postgres
+and uploads restore steps, running on a Linux server, and behavior under load. Single
+shared document pool only; per-user separation, OCR, relevance thresholds, version cleanup,
+and monitoring or alerting remain future work. `boto3` is still unused.

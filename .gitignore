@@ -12,8 +12,10 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.production.example
 data/
 qdrant_storage/
+backups/
 .streamlit/secrets.toml
 
 # macOS
