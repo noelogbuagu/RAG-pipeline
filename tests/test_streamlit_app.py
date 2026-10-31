@@ -2,6 +2,7 @@
 
 import io
 import json
+import logging
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,10 +15,27 @@ from streamlit.testing.v1 import AppTest
 import streamlit_app as ui
 
 
+SCRIPT_CONTEXT_LOGGER = "streamlit.runtime.scriptrunner_utils.script_run_context"
+
+
 def render_app():
     import streamlit_app
 
     streamlit_app.main()
+
+
+def setUpModule():
+    # Streamlit warns about a missing ScriptRunContext when the UI runs outside
+    # `streamlit run`. The warning is expected in these tests, so hide only it.
+    logging.getLogger(SCRIPT_CONTEXT_LOGGER).addFilter(_drop_script_context_warning)
+
+
+def tearDownModule():
+    logging.getLogger(SCRIPT_CONTEXT_LOGGER).removeFilter(_drop_script_context_warning)
+
+
+def _drop_script_context_warning(record):
+    return "missing ScriptRunContext" not in record.getMessage()
 
 
 class StreamlitAppTests(unittest.TestCase):

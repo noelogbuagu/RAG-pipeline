@@ -831,3 +831,29 @@ with a serialized chunk result of 58,862 bytes, within workflow limits. The copi
 PDF's checksum matches the supplied file. No OpenAI requests or production
 deployment were performed; live credentials and cross-platform setup still need
 testing in each user's environment.
+
+## 26. Run the first live test and quiet the UI test warnings
+
+**Date:** 31 October 2026 · **Status:** Live smoke test passed; test output cleaned
+
+Created a local `.env` from `.env.example` and added a real OpenAI API key, then
+started the three local services (Uvicorn, the Inngest dev server, and Streamlit)
+as described in the README. Backend health reported `ok`, and Inngest registered
+all three functions: Ingest Document, Query Documents, and Answer Documents.
+
+Ran the first live test through the Streamlit UI with `examples/docling.pdf`.
+Ingestion completed and the UI reported 18 indexed chunks, matching the earlier
+loader check. Asked "Which formats can Docling export to?" with three passages.
+The answer, "JSON or Markdown format [1]", agreed with the expected evidence in
+`examples/README.md`, and passage [1] was the page 2 text it cited. This is one
+question on one document, so it shows the pipeline works end to end but says little
+about answer quality in general. The run status in the UI briefly stayed on
+"Queued" after Inngest had finished before updating; the cause was not
+investigated and may be polling lag in the embedded browser pane.
+
+The Streamlit tests logged `missing ScriptRunContext` warnings because
+`streamlit.testing.v1.AppTest` runs the UI outside `streamlit run`. Added a log
+filter in `tests/test_streamlit_app.py`, installed in `setUpModule` and removed in
+`tearDownModule`, that hides only that message from the
+`streamlit.runtime.scriptrunner_utils.script_run_context` logger. Other Streamlit
+warnings still appear. Application code is unchanged; all 44 tests still pass.
