@@ -207,7 +207,7 @@ class StreamlitAppTests(unittest.TestCase):
             ) as http:
                 self.assertEqual(ui.fetch_run("a/b"), expected)
                 self.assertTrue(
-                    http.call_args.args[0].endswith("/v1/events/a%2Fb/runs")
+                    http.call_args.args[0].full_url.endswith("/v1/events/a%2Fb/runs")
                 )
                 self.assertEqual(http.call_args.kwargs["timeout"], 5)
         for body in [{}, {"data": [1]}, {"data": [{}, {}]}]:

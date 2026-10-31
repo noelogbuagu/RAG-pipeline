@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from qdrant_client.models import PointStruct
 
 from answer_generator import generate_answer
+from config import is_production, require_production_settings
 from custom_types import (
     DocumentChunk,
     RAGChunkAndSrc,
@@ -51,7 +52,7 @@ MAX_TEXT_STEP_BYTES = 2 * 1024 * 1024
 inngest_client = inngest.Inngest(
     app_id="rag_app",
     logger=logging.getLogger("uvicorn"),
-    is_production=False,
+    is_production=is_production(),
     serializer=inngest.PydanticSerializer(),
 )
 
@@ -314,6 +315,7 @@ def rag_answer_documents(ctx: inngest.ContextSync) -> RAGQueryResult:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Own one storage connection and release its lock on shutdown/reload."""
+    require_production_settings()
     storage = QdrantStorage(
         path=os.getenv("QDRANT_PATH") or "qdrant_storage",
         url=os.getenv("QDRANT_URL", "").strip() or None,

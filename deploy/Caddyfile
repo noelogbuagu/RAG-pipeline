@@ -1,0 +1,22 @@
+# Caddy obtains and renews the HTTPS certificate for APP_DOMAIN automatically.
+# The domain's DNS must point at this server and ports 80 and 443 must be open.
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	# Streamlit allows 20 MiB uploads; leave headroom for the multipart envelope.
+	request_body {
+		max_size 25MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Everything, including Streamlit's websocket, goes through the login proxy.
+	reverse_proxy oauth2-proxy:4180 {
+		flush_interval -1
+	}
+}

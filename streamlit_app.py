@@ -9,12 +9,13 @@ import time
 from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import quote
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import inngest
 import streamlit as st
 from dotenv import load_dotenv
 
+from config import inngest_url, is_production
 from custom_types import (
     RAGIngestResult,
     RAGQueryResult,
@@ -30,17 +31,18 @@ POLL_TIMEOUT_SECONDS = 120
 
 
 def dev_server_url() -> str:
-    """Use one dev-server address for both sending events and reading results."""
-    return os.getenv("INNGEST_DEV_SERVER_URL", "http://127.0.0.1:8288").rstrip("/")
+    """Use one Inngest address for both sending events and reading results."""
+    return inngest_url()
 
 
 @st.cache_resource(max_entries=1, show_spinner=False)
 def get_inngest_client() -> inngest.Inngest:
-    """Reuse the synchronous development client across Streamlit reruns."""
+    """Reuse the synchronous client across Streamlit reruns."""
     return inngest.Inngest(
         app_id="rag_app",
-        is_production=False,
+        is_production=is_production(),
         event_api_base_url=dev_server_url(),
+        event_key=os.getenv("INNGEST_EVENT_KEY") or None,
         request_timeout=10,
     )
 
@@ -85,8 +87,13 @@ def send_event(name: str, data: dict[str, object]) -> str:
 def fetch_run(event_id: str) -> dict | None:
     """Read the single run triggered by one of our events, with a bounded request."""
     url = f"{dev_server_url()}/v1/events/{quote(event_id, safe='')}/runs"
+    request = Request(url)
+    signing_key = os.getenv("INNGEST_SIGNING_KEY")
+    if signing_key:
+        # A production Inngest server requires its signing key to read run status.
+        request.add_header("Authorization", f"Bearer {signing_key}")
     try:
-        with urlopen(url, timeout=5) as response:
+        with urlopen(request, timeout=5) as response:
             body = json.load(response)
     except (URLError, TimeoutError, OSError, ValueError) as exc:
         raise RuntimeError(
@@ -174,7 +181,8 @@ def display_run(kind: str) -> None:
     st.caption(job["label"])
     with st.expander("Run details", icon=":material/info:"):
         st.text(f"Event: {job['event_id']}")
-        st.link_button("Inspect in Inngest", f"{dev_server_url()}/functions")
+        if not is_production():
+            st.link_button("Inspect in Inngest", f"{dev_server_url()}/functions")
     if job["phase"] == "waiting":
         try:
             if time.monotonic() - job["started"] >= POLL_TIMEOUT_SECONDS:
@@ -223,7 +231,9 @@ def display_run(kind: str) -> None:
         display_output(kind, job["output"])
     elif job["phase"] == "failed":
         st.error(
-            f"Run {job['status'].lower()}. Open Inngest to inspect the failed step."
+            f"Run {job['status'].lower()}. Ask an administrator to inspect the failed step in Inngest."
+            if is_production()
+            else f"Run {job['status'].lower()}. Open Inngest to inspect the failed step."
         )
     elif job["phase"] == "paused":
         st.warning(job["error"])
@@ -257,11 +267,12 @@ def main() -> None:
     st.caption(
         "Upload PDF or Word documents, then ask a question and check the passages behind the answer."
     )
-    st.link_button(
-        "Open Inngest dashboard",
-        f"{dev_server_url()}/functions",
-        icon=":material/open_in_new:",
-    )
+    if not is_production():
+        st.link_button(
+            "Open Inngest dashboard",
+            f"{dev_server_url()}/functions",
+            icon=":material/open_in_new:",
+        )
 
     with st.form("ingest_form"):
         st.subheader("1. Ingest a document")
