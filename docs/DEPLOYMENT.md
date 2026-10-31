@@ -23,13 +23,91 @@ use an SSH tunnel (below).
 ## Before you start
 
 - A Linux server with Docker Engine and the Compose plugin. Allow about 2 vCPUs and
-  4 GB of memory, plus disk for documents and the index.
+  4 GB of memory, plus disk for documents and the index. The next section prepares one
+  on Hetzner.
 - A domain name whose DNS record points at the server, with ports 80 and 443 open
   to the internet. Caddy needs both to obtain the certificate.
 - An OIDC client from your identity provider (Google, Microsoft Entra ID, Okta, and
   so on) with the redirect URI `https://<your-domain>/oauth2/callback`.
 - An OpenAI API key with billing, and access to `text-embedding-3-large` and
   `gpt-5.4-mini`.
+
+## Prepare a Hetzner server
+
+Skip this section if you host elsewhere; any Linux server works. These steps follow
+Hetzner Cloud's own guides ([create a server](https://docs.hetzner.com/cloud/servers/getting-started/creating-a-server),
+[create a firewall](https://docs.hetzner.com/cloud/firewalls/getting-started/creating-a-firewall),
+[connect to it](https://docs.hetzner.com/cloud/servers/getting-started/connecting-to-the-server)),
+so check them for any screen that has changed.
+
+### 1. Create the server
+
+In the [Hetzner Cloud Console](https://console.hetzner.cloud/), create a server in a
+project of its own, so that tokens, billing, and clean-up stay separate from your
+other work.
+
+- **Image:** a current Ubuntu LTS release.
+- **Size:** at least 4 GB of memory. Eight containers run on it and the image build
+  needs headroom. Check the Console for current sizes and prices.
+- **SSH key:** add your public key when you create the server and sign in with it.
+  Do not rely on an emailed root password.
+- **Use a fresh server.** If you reuse one that already runs another stack, make sure
+  nothing else is using ports 80 and 443 (an existing Caddy or nginx would clash with
+  this stack's Caddy).
+
+### 2. Create the firewall
+
+Hetzner Cloud Firewalls filter traffic before it reaches the server, so they also
+block ports that Docker publishes. That makes them a useful second layer. Create a
+firewall with these inbound rules and apply it to the server. A server with no
+firewall accepts traffic on every port.
+
+| Port | Source | Why |
+| --- | --- | --- |
+| 22 (SSH) | **Your IP address only** | Full control of the server; keep it narrow |
+| 80 (HTTP) | Any IPv4 and IPv6 | Certificate issuance and redirect to HTTPS |
+| 443 (HTTPS) | Any IPv4 and IPv6 | The app |
+
+Do **not** open 8000, 8288, or 8501. The Inngest dashboard is reached through an SSH
+tunnel instead (see Operate). If your home IP changes, update the SSH rule in the
+Console; a VPN with a fixed address avoids this.
+
+### 3. Point a hostname at it
+
+At the registrar or DNS host for your domain, create an `A` record for the hostname
+you will use, such as `rag`, pointing at the server's IPv4 address. Add an `AAAA`
+record for its IPv6 address only if you want IPv6 (the firewall rules above already
+allow it). Wait until the name resolves before starting the stack:
+
+```sh
+dig +short rag.example.com      # should print the server's IP address
+```
+
+Caddy requests its certificate the first time it starts. Starting before DNS is
+correct means failed attempts, and Let's Encrypt limits repeated failures.
+
+### 4. Install Docker and fetch the code
+
+Connect with `ssh root@<server-ip>` (or the user you created), then install Docker
+Engine with the Compose plugin by following Docker's
+[Ubuntu instructions](https://docs.docker.com/engine/install/ubuntu/). Check it:
+
+```sh
+docker --version && docker compose version
+```
+
+Install pending security updates (`apt update && apt upgrade`) and consider enabling
+automatic security updates. Then fetch the code where the other steps expect it:
+
+```sh
+git clone https://github.com/noelogbuagu/RAG-pipeline.git /opt/RAG-pipeline
+cd /opt/RAG-pipeline
+```
+
+Continue with **Deploy**, skipping its `git clone` and `cd` lines. Hetzner's optional
+server backups and snapshots help with rebuilding the machine, but they do not replace
+`deploy/backup.sh`; copy those backups to a separate location such as a Hetzner
+Storage Box or object storage.
 
 ## Deploy
 
